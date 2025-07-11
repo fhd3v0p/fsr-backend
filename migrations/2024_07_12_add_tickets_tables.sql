@@ -1,8 +1,7 @@
--- Миграция: Добавление таблиц для системы билетов и premium статуса
+-- Миграция: Добавление таблиц для системы билетов
 -- Дата: 2024-07-12
 
--- Добавляем поле is_premium в таблицу users
-ALTER TABLE users ADD COLUMN is_premium BOOLEAN DEFAULT FALSE;
+-- Примечание: поле is_premium уже добавлено в database.py при инициализации
 
 -- Создаем таблицу для билетов за подписку на все каналы
 CREATE TABLE IF NOT EXISTS tickets_subscription (
