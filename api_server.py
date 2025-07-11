@@ -523,6 +523,33 @@ def add_ticket_for_referral():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/tickets/total', methods=['GET'])
+def get_total_tickets():
+    """Получение общего количества билетов"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Количество участников (подписчиков на каналы)
+        cursor.execute('SELECT COUNT(*) FROM giveaway_participants')
+        participants = cursor.fetchone()[0]
+        
+        # Сумма всех рефералов
+        cursor.execute('SELECT SUM(referral_count) FROM users')
+        referrals = cursor.fetchone()[0] or 0
+        
+        conn.close()
+        
+        total = participants + referrals
+        
+        logger.info(f"Total tickets requested: {total} (participants: {participants}, referrals: {referrals})")
+        
+        return jsonify({'total': total}), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting total tickets: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok'}), 200
