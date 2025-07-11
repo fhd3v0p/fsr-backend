@@ -8,6 +8,21 @@ import os
 import sys
 from pathlib import Path
 
+def init_database_if_needed(db_path):
+    """Инициализирует базу данных если она не существует"""
+    if not os.path.exists(db_path):
+        print(f"📁 База данных {db_path} не найдена, инициализируем...")
+        try:
+            # Импортируем Database только если нужно
+            from database import Database
+            db = Database(db_path)
+            print("✅ База данных успешно инициализирована!")
+            return True
+        except Exception as e:
+            print(f"❌ Ошибка при инициализации базы данных: {e}")
+            return False
+    return True
+
 def apply_migration(db_path, migration_file):
     """Применяет миграцию из файла"""
     print(f"Применяем миграцию: {migration_file}")
@@ -36,8 +51,8 @@ def main():
     # Путь к базе данных
     db_path = "fsr.db"
     
-    if not os.path.exists(db_path):
-        print(f"❌ База данных {db_path} не найдена")
+    # Инициализируем базу данных если нужно
+    if not init_database_if_needed(db_path):
         sys.exit(1)
     
     # Папка с миграциями
