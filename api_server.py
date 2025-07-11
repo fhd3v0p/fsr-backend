@@ -523,6 +523,10 @@ def add_ticket_for_referral():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/health', methods=['GET'])
+def health():
+    return jsonify({'status': 'ok'}), 200
+
 if __name__ == '__main__':
     # Инициализируем таблицу при запуске
     init_photo_uploads_table()
@@ -533,7 +537,3 @@ if __name__ == '__main__':
         port=5000,
         debug=False
     ) 
-@app.route('/api/health', methods=['GET'])
-def health():
-    return jsonify({'status': 'ok'}), 200
-
