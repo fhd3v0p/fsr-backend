@@ -8,10 +8,28 @@ import os
 import sys
 from pathlib import Path
 
-def init_database_if_needed(db_path):
-    """Инициализирует базу данных если она не существует"""
+def check_database_initialized(db_path):
+    """Проверяет, инициализирована ли база данных (есть ли таблица users)"""
     if not os.path.exists(db_path):
-        print(f"📁 База данных {db_path} не найдена, инициализируем...")
+        return False
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Проверяем существование таблицы users
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+        result = cursor.fetchone()
+        conn.close()
+        
+        return result is not None
+    except Exception:
+        return False
+
+def init_database_if_needed(db_path):
+    """Инициализирует базу данных если она не существует или не инициализирована"""
+    if not check_database_initialized(db_path):
+        print(f"📁 База данных {db_path} не инициализирована, инициализируем...")
         try:
             # Импортируем Database только если нужно
             from database import Database
