@@ -27,7 +27,8 @@ class Database:
                 referral_code TEXT UNIQUE,
                 referred_by TEXT,
                 referral_count INTEGER DEFAULT 0,
-                total_referral_xp INTEGER DEFAULT 0
+                total_referral_xp INTEGER DEFAULT 0,
+                is_premium BOOLEAN DEFAULT FALSE
             )
         ''')
 
@@ -115,6 +116,23 @@ class Database:
         cursor.execute('SELECT COUNT(*) FROM giveaway_channels WHERE channel_id = ?', (-1001973736826,))
         if cursor.fetchone()[0] == 0:
             cursor.execute('INSERT INTO giveaway_channels (channel_id, username) VALUES (?, ?)', (-1001973736826, 'F_S_R_US'))
+
+        # Таблица подписки на все каналы
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tickets_subscription (
+                user_id INTEGER PRIMARY KEY,
+                is_subscribed_all BOOLEAN DEFAULT FALSE
+            )
+        ''')
+
+        # Таблица билетов за рефералов
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tickets_referral (
+                user_id INTEGER NOT NULL,
+                referral_id INTEGER NOT NULL,
+                PRIMARY KEY (user_id, referral_id)
+            )
+        ''')
 
         conn.commit()
         conn.close()
@@ -673,27 +691,62 @@ class Database:
             print(f"Error adding ticket for referral start: {e}")
             return False
 
+    def set_subscription_status(self, user_id: int, is_subscribed_all: bool):
+        """Устанавливает статус подписки на все каналы (True/False)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM tickets_subscription WHERE user_id = ?', (user_id,))
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(
+                'INSERT INTO tickets_subscription (user_id, is_subscribed_all) VALUES (?, ?)',
+                (user_id, is_subscribed_all)
+            )
+        else:
+            cursor.execute(
+                'UPDATE tickets_subscription SET is_subscribed_all = ? WHERE user_id = ?',
+                (is_subscribed_all, user_id)
+            )
+        conn.commit()
+        conn.close()
+
+    def add_referral_ticket(self, user_id: int, referral_id: int):
+        """Добавляет билет за реферала (одна запись на каждого приглашённого)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM tickets_referral WHERE user_id = ? AND referral_id = ?', (user_id, referral_id))
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(
+                'INSERT INTO tickets_referral (user_id, referral_id) VALUES (?, ?)',
+                (user_id, referral_id)
+            )
+            conn.commit()
+        conn.close()
+
+    def set_user_premium(self, user_id: int, is_premium: bool):
+        """Устанавливает статус Telegram Premium"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET is_premium = ? WHERE user_id = ?', (is_premium, user_id))
+        conn.commit()
+        conn.close()
+
     def get_user_tickets(self, user_id: int) -> int:
-        """Возвращает количество билетов пользователя (1 за подписку + 1 за каждого друга)"""
+        """Возвращает количество билетов пользователя (1 за подписку на все каналы + 1 за каждого реферала)"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            # Проверяем подписку (1 билет если giveaway_participants есть)
-            cursor.execute('''
-                SELECT COUNT(*) FROM giveaway_participants WHERE user_id = ?
-            ''', (user_id,))
-            base_ticket = 1 if cursor.fetchone()[0] > 0 else 0
-            # Считаем друзей по рефке
-            cursor.execute('''
-                SELECT referral_count FROM users WHERE user_id = ?
-            ''', (user_id,))
-            ref_count = cursor.fetchone()
-            ref_count = ref_count[0] if ref_count else 0
+            # Билет за подписку
+            cursor.execute('SELECT is_subscribed_all FROM tickets_subscription WHERE user_id = ?', (user_id,))
+            sub = cursor.fetchone()
+            tickets_sub = 1 if sub and sub[0] else 0
+            # Билеты за рефералов
+            cursor.execute('SELECT COUNT(*) FROM tickets_referral WHERE user_id = ?', (user_id,))
+            tickets_ref = cursor.fetchone()[0]
             conn.close()
-            return base_ticket + ref_count
+            return tickets_sub + tickets_ref
         except Exception as e:
             print(f"Error getting user tickets: {e}")
-            return 0 
+            return 0
 
     def get_task_statuses(self, user_id: int) -> dict:
         """
