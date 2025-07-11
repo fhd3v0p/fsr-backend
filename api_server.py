@@ -20,6 +20,24 @@ CORS(app)  # Разрешаем CORS для Flutter Web App
 # Путь к базе данных
 DB_PATH = 'users.db'
 
+# Загрузка каналов из channels.json
+with open('channels.json', 'r') as f:
+    CHANNEL_IDS = json.load(f)['channels']
+
+# Проверка, что бот админ во всех каналах при старте
+async def check_bot_admin_rights():
+    bot = Bot(token=BOT_TOKEN)
+    me = await bot.me
+    for channel_id in CHANNEL_IDS:
+        try:
+            member = await bot.get_chat_member(chat_id=channel_id, user_id=me.id)
+            if member.status not in ['administrator', 'creator']:
+                logger.error(f"Bot is NOT admin in channel {channel_id}!")
+            else:
+                logger.info(f"Bot is admin in channel {channel_id}")
+        except Exception as e:
+            logger.error(f"Error checking admin rights in channel {channel_id}: {e}")
+
 def init_photo_uploads_table():
     """Инициализация таблицы для загруженных фото"""
     conn = sqlite3.connect(DB_PATH)
@@ -413,31 +431,22 @@ def log_folder_subscription():
 
 @app.route('/api/check-subscription', methods=['POST'])
 def check_subscription():
-    """Проверка подписки пользователя на все каналы из giveaway_channels"""
+    """Проверка подписки пользователя на все каналы из channels.json"""
     try:
         data = request.get_json()
         user_id = int(data.get('user_id'))
-        username = data.get('username')
-        
-        from database import Database
-        db = Database()
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute('SELECT channel_id FROM giveaway_channels')
-        channels = [row[0] for row in cursor.fetchall()]
-        conn.close()
-        
         bot = Bot(token=BOT_TOKEN)
-        is_subscribed = False
-        for channel_id in channels:
+        all_subscribed = True
+        for channel_id in CHANNEL_IDS:
             try:
                 member = asyncio.run(bot.get_chat_member(chat_id=channel_id, user_id=user_id))
-                if member.status in ['member', 'administrator', 'creator']:
-                    is_subscribed = True
+                if member.status not in ['member', 'administrator', 'creator']:
+                    all_subscribed = False
                     break
-            except Exception as e:
-                continue
-        return jsonify({'subscribed': is_subscribed}), 200
+            except Exception:
+                all_subscribed = False
+                break
+        return jsonify({'subscribed': all_subscribed}), 200
     except Exception as e:
         logger.error(f"Error checking subscription: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
@@ -449,27 +458,23 @@ def get_user_tickets(user_id):
         from database import Database
         db = Database()
         user_id = int(user_id)
-        # Проверяем подписку
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute('SELECT channel_id FROM giveaway_channels')
-        channels = [row[0] for row in cursor.fetchall()]
-        conn.close()
         bot = Bot(token=BOT_TOKEN)
-        is_subscribed = False
-        for channel_id in channels:
+        # Проверяем подписку на все каналы
+        all_subscribed = True
+        for channel_id in CHANNEL_IDS:
             try:
                 member = asyncio.run(bot.get_chat_member(chat_id=channel_id, user_id=user_id))
-                if member.status in ['member', 'administrator', 'creator']:
-                    is_subscribed = True
+                if member.status not in ['member', 'administrator', 'creator']:
+                    all_subscribed = False
                     break
             except Exception:
-                continue
+                all_subscribed = False
+                break
         # Считаем друзей по рефке
         ref_info = db.get_user_referral_info(user_id)
-        tickets = (1 if is_subscribed else 0) + (ref_info['successful_invites'] if ref_info else 0)
+        tickets = (1 if all_subscribed else 0) + (ref_info['successful_invites'] if ref_info else 0)
         username = db.get_user_stats(user_id).get('username', '')
-        return jsonify({'tickets': tickets, 'subscribed': is_subscribed, 'username': username}), 200
+        return jsonify({'tickets': tickets, 'subscribed': all_subscribed, 'username': username}), 200
     except Exception as e:
         logger.error(f"Error getting user tickets: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
@@ -557,7 +562,8 @@ def health():
 if __name__ == '__main__':
     # Инициализируем таблицу при запуске
     init_photo_uploads_table()
-    
+    # Проверяем админство бота во всех каналах
+    asyncio.run(check_bot_admin_rights())
     # Запускаем сервер
     app.run(
         host='0.0.0.0',
