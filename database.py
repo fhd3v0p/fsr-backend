@@ -694,3 +694,24 @@ class Database:
         except Exception as e:
             print(f"Error getting user tickets: {e}")
             return 0 
+
+    def get_task_statuses(self, user_id: int) -> dict:
+        """
+        Возвращает статусы выполнения заданий:
+        - task1_done: подписка на папку (есть в giveaway_participants)
+        - task2_done: есть хотя бы один успешный invite (referral_invites.status = 'joined')
+        """
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            # task1: подписка на папку (есть запись в giveaway_participants)
+            cursor.execute('SELECT COUNT(*) FROM giveaway_participants WHERE user_id = ?', (user_id,))
+            task1_done = cursor.fetchone()[0] > 0
+            # task2: хотя бы один успешный invite
+            cursor.execute('SELECT COUNT(*) FROM referral_invites WHERE inviter_id = ? AND status = "joined"', (user_id,))
+            task2_done = cursor.fetchone()[0] > 0
+            conn.close()
+            return {'task1_done': task1_done, 'task2_done': task2_done}
+        except Exception as e:
+            print(f"Error getting task statuses: {e}")
+            return {'task1_done': False, 'task2_done': False} 

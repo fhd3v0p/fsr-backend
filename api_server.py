@@ -479,7 +479,7 @@ def check_subscription():
 
 @app.route('/api/user/<user_id>/tickets', methods=['GET'])
 def get_user_tickets(user_id):
-    """Получение количества билетов пользователя"""
+    """Получение количества билетов пользователя и статусов заданий"""
     try:
         from database import Database
         db = Database()
@@ -500,7 +500,15 @@ def get_user_tickets(user_id):
         ref_info = db.get_user_referral_info(user_id)
         tickets = (1 if all_subscribed else 0) + (ref_info['successful_invites'] if ref_info else 0)
         username = db.get_user_stats(user_id).get('username', '')
-        return jsonify({'tickets': tickets, 'subscribed': all_subscribed, 'username': username}), 200
+        # Получаем статусы заданий
+        task_statuses = db.get_task_statuses(user_id)
+        return jsonify({
+            'tickets': tickets,
+            'subscribed': all_subscribed,
+            'username': username,
+            'task1_done': task_statuses['task1_done'],
+            'task2_done': task_statuses['task2_done']
+        }), 200
     except Exception as e:
         logger.error(f"Error getting user tickets: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
