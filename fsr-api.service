@@ -1,0 +1,14 @@
+[Unit]
+Description=FSR API Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/telegram_bot
+ExecStart=/usr/bin/python3 api_server.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 
