@@ -29,7 +29,7 @@ with open('channels.json', 'r') as f:
 # Проверка, что бот админ во всех каналах при старте
 async def check_bot_admin_rights():
     bot = Bot(token=BOT_TOKEN)
-    me = await bot.me
+    me = await bot.get_me()
     for channel_id in CHANNEL_IDS:
         try:
             member = await bot.get_chat_member(chat_id=channel_id, user_id=me.id)
@@ -512,7 +512,7 @@ def check_subscription_by_username():
         bot = Bot(token=BOT_TOKEN)
         # Проверяем, что бот админ в канале
         try:
-            bot_id = asyncio.run(bot.me).id
+            bot_id = asyncio.run(bot.get_me()).id
             member = asyncio.run(bot.get_chat_member(chat_id=channel_id, user_id=bot_id))
             if member.status not in ['administrator', 'creator']:
                 return jsonify({'error': 'Bot is not admin in channel', 'admin': False}), 403
