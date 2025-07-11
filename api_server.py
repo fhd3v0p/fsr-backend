@@ -9,6 +9,8 @@ import logging
 import asyncio
 from aiogram import Bot
 from config import BOT_TOKEN
+import threading
+import time
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -400,31 +402,55 @@ def log_referral_stats():
         logger.error(f"Error logging referral stats: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
 
+def async_check_and_award_ticket(user_id):
+    time.sleep(3)  # Дать время на подписку
+    from database import Database
+    db = Database()
+    bot = Bot(token=BOT_TOKEN)
+    all_subscribed = True
+    for channel_id in CHANNEL_IDS:
+        try:
+            member = asyncio.run(bot.get_chat_member(chat_id=channel_id, user_id=user_id))
+            if member.status not in ['member', 'administrator', 'creator']:
+                all_subscribed = False
+                break
+        except Exception:
+            all_subscribed = False
+            break
+    if all_subscribed:
+        # Проверяем, есть ли уже участник
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM giveaway_participants WHERE user_id = ?', (user_id,))
+        exists = cursor.fetchone()[0]
+        if not exists:
+            cursor.execute('INSERT INTO giveaway_participants (user_id, joined_at) VALUES (?, CURRENT_TIMESTAMP)', (user_id,))
+            conn.commit()
+            logger.info(f"User {user_id} подписан на все каналы, билет выдан!")
+        conn.close()
+    else:
+        logger.info(f"User {user_id} не подписан на все каналы, билет не выдан.")
+
 @app.route('/api/log-folder-subscription', methods=['POST'])
 def log_folder_subscription():
-    """API endpoint для логирования подписки на папку с каналами"""
+    """API endpoint для логирования подписки на папку с каналами и автоматической проверки подписки"""
     try:
         data = request.get_json()
-        
         if not data:
             return jsonify({'error': 'No data provided'}), 400
-        
         if 'user_id' not in data:
             return jsonify({'error': 'Missing user_id field'}), 400
-        
         user_id = int(data['user_id'])
-        
-        # Используем базу данных для логирования
         from database import Database
         db = Database()
         db.log_folder_subscription(user_id)
-        
         logger.info(f"Folder subscription logged: user_id={user_id}")
+        # Асинхронно проверяем подписку и начисляем билет
+        threading.Thread(target=async_check_and_award_ticket, args=(user_id,)).start()
         return jsonify({
             'success': True,
-            'message': 'Folder subscription logged successfully'
+            'message': 'Folder subscription logged successfully, checking subscription in background.'
         }), 200
-        
     except Exception as e:
         logger.error(f"Error logging folder subscription: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
@@ -515,7 +541,7 @@ def check_subscription_by_username():
 
 @app.route('/api/add-ticket-for-referral', methods=['POST'])
 def add_ticket_for_referral():
-    """API endpoint для начисления билета пригласившему, если друг стартует по реф-ссылке"""
+    """API endpoint для начисления билета пригласившему, если друг стартует по реф-ссылке и автоматической проверки подписки"""
     try:
         data = request.get_json()
         inviter_id = int(data.get('inviter_id'))
@@ -524,6 +550,8 @@ def add_ticket_for_referral():
         db = Database()
         success = db.add_ticket_for_referral_start(inviter_id, invitee_id)
         tickets = db.get_user_tickets(inviter_id)
+        # Асинхронно проверяем подписку и начисляем билет пригласившему
+        threading.Thread(target=async_check_and_award_ticket, args=(inviter_id,)).start()
         return jsonify({'success': success, 'tickets': tickets}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
